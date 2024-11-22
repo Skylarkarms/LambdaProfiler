@@ -62,9 +62,11 @@ public class LambdaProfiler {
         }
     }
 
-    private static ThreadFactory mCustom = Executors.cleanFactory(Thread.MAX_PRIORITY);
+    private static final ThreadFactory defaultFact = Executors.cleanFactory(Thread.MAX_PRIORITY);
+    private static volatile ThreadFactory mCustom = defaultFact;
     private static volatile boolean factoryGrabbed;
     public static void setCustom(ThreadFactory custom) {
+        if (mCustom != defaultFact) throw new IllegalStateException("Instance can only be set once.");
         if (factoryGrabbed) throw new IllegalStateException("\n ThreadFactory has already been initialized. this method should be called before any one "
                 + Interpreter.class + " instance or any of it's derived classes has been initialized.");
         mCustom = custom;
@@ -151,6 +153,20 @@ public class LambdaProfiler {
         );
     }
 
+    public static BooleanSupplier exceptional(
+            BooleanSupplier command,
+            StackWindow window,
+            long duration, TimeUnit unit,
+            LambdaProfiler lambdaProfiler
+    ) {
+        return exceptional(
+                2, window,
+                command,
+                unit.toNanos(duration)
+                , lambdaProfiler
+        );
+    }
+
     public static Runnable exceptional(
             Runnable command,
             long timeout_nanos,
@@ -177,6 +193,20 @@ public class LambdaProfiler {
         );
     }
 
+    public static Runnable exceptional(
+            Runnable command,
+            StackWindow window,
+            long duration, TimeUnit unit,
+            LambdaProfiler lambdaProfiler
+    ) {
+        return exceptional(
+                2, window,
+                command,
+                unit.toNanos(duration),
+                lambdaProfiler
+        );
+    }
+
     public static<T> Supplier<T> exceptional(
             Supplier<T> command,
             long timeout_nanos,
@@ -197,6 +227,20 @@ public class LambdaProfiler {
     ) {
         return exceptional(
                 2, StackWindow.first,
+                command
+                , unit.toNanos(duration),
+                lambdaProfiler
+        );
+    }
+
+    public static<T> Supplier<T> exceptional(
+            Supplier<T> command,
+            StackWindow window,
+            long duration, TimeUnit unit,
+            LambdaProfiler lambdaProfiler
+    ) {
+        return exceptional(
+                2, window,
                 command
                 , unit.toNanos(duration),
                 lambdaProfiler
@@ -583,7 +627,7 @@ public class LambdaProfiler {
             @Override
             public String toString() {
                 return "TimeOutStatistic{" +
-                        ",\n >> stats =\n" + snap().indent(3) +
+                        "\n >> stats =\n" + snap().indent(3) +
                         " >> count = " + statistics.getCount() +
                         "\n}";
             }
@@ -591,8 +635,8 @@ public class LambdaProfiler {
             String snap() {
                 return
                         " - min = " + formatNanos(lastSnapshot[0])
-                                + "\n - median = " + formatNanos(lastSnapshot[0])
-                                + "\n - max = " + formatNanos(lastSnapshot[0]);
+                                + "\n - median = " + formatNanos(lastSnapshot[1])
+                                + "\n - max = " + formatNanos(lastSnapshot[2]);
             }
         }
 
@@ -620,7 +664,7 @@ public class LambdaProfiler {
         private final long timeout_nanos;
         private final StackWindow window;
 
-        private final int hash = hashCode();
+        /*private */final int hash = hashCode();
 
         @Override
         public BooleanSupplier exceptional(BooleanSupplier core) { return exceptional(core, 3, window); }
@@ -729,10 +773,10 @@ public class LambdaProfiler {
                 return "TimeoutProcess{"
                         + "\n >> thread=\n" + thread.toString().indent(3)
                         + " >> id=\n" + id.toString().indent(3)
-                        + " >> access_point=\n" + stackDatum.toString().indent(3)
-                        + " >> starting_time=" + starting_time
-                        + "\n >> ending_time=" + (ending_time == 0 ? "[unfinished]" : ending_time)
-                        + ",\n >> timeout_nanos=" + formatNanos(timeout_nanos).indent(3)
+                        + " >> access_point =\n" + stackDatum.toString().indent(3)
+                        + " >> starting_time = " + starting_time
+                        + ",\n >> timeout_nanos =\n" + formatNanos(timeout_nanos).indent(3)
+                        + " >> finish time =\n" + (ending_time == 0 ? "[unfinished]" : formatNanos(finished)).indent(3)
                         + "}@".concat(Integer.toString(hashCode()));
             }
         }
@@ -781,11 +825,56 @@ public class LambdaProfiler {
     public static class Interpreter
             extends LambdaProfilerImpl
             implements Executors.Activator {
+
+        static volatile boolean base_init;
+
+        record Base() {
+            static{base_init = true;}
+            static final ConcurrentHashMap<String, Interpreter> ref = new ConcurrentHashMap<>();
+
+            public static void put(String tag, Interpreter interpreter) {
+                if (ref.putIfAbsent(
+                        tag,
+                        interpreter
+                ) != null) throw new IllegalStateException("Tag [" + tag + "] already present.");
+            }
+//            static Interpreter remove(String tag) {
+//                return ref.remove(
+//                        tag
+//                );
+//            }
+        }
+
+        public static Interpreter get(String tag) {
+            Interpreter res = base_init ? Base.ref.get(tag) : null;
+            if (res == null) throw new NullPointerException("Interpreter not found for: " + tag);
+            return res;
+        }
+
+
         final ConcurrentHashMap<StackTraceElement, Queue<TimeoutProcess>> exceptionMap = new ConcurrentHashMap<>();
         // Map to store the highest-time entry for each StackTraceElement
         private final Map<StackTraceElement, TimeOutStatistic> execsMap = new ConcurrentHashMap<>();
 
         final Executors.Activator generator;
+
+        volatile boolean isShutDown;
+
+        public boolean isShutDown() {
+            return isShutDown;
+        }
+
+        public void shutdown() {
+            if (!isShutDown) {
+                isShutDown = true;
+                this.generator.stop();
+                if (this.tag != null)
+                    Base.ref.remove(tag);
+                exceptionMap.clear();
+                execsMap.clear();
+            }
+
+        }
 
         record Process(ProcessID id, long total) {
             @Override
@@ -826,13 +915,19 @@ public class LambdaProfiler {
                         .append(exceptions.length);
                 for (TimeoutProcess pe:exceptions
                 ) {
-                    boolean finished = pe.finished != 0;
-                    long deadlock_t = finished ? pe.finished : (scan_time - pe.starting_time);
+//                    boolean finished = pe.finished != 0;
+//                    long deadlock_t = finished ? pe.finished : (scan_time - pe.starting_time);
                     builder
                             .append("\n      >> exception = \n ")
-                            .append(pe.toString().indent(8))
-                            .append("      >> deadlock time = \n ")
-                            .append(formatNanos(deadlock_t).concat(" (finished =" + finished + ")").indent(8));
+                            .append(pe.toString().indent(8));
+//                            .append("      >> deadlock time = \n ")
+//                            .append(formatNanos(deadlock_t).concat(" (finished =" + finished + ")").indent(8));
+                    if (pe.finished == 0) {
+//                    if (!finished) {
+                        builder
+                                .append("      >> deadlock time = \n ")
+                                .append(formatNanos(scan_time - pe.starting_time).indent(8));
+                    }
                 }
             }
             return builder.append("    }").toString();
@@ -1089,14 +1184,18 @@ public class LambdaProfiler {
             @FunctionalInterface
             interface TypedPrinter {
                 final class PrinterContainer {
+                    final String tag;
                     final Consumer<String>[] printer;
                     final TypedPrinter typed;
-                    public PrinterContainer(Consumer<String>[] printer) {
+                    public PrinterContainer(
+                            String profiler_tag,
+                            Consumer<String>[] printer) {
+                        tag = " >> [".concat(profiler_tag).concat("]: \n");
                         this.printer = printer;
                         typed = TypedPrinter.generate(printer);
                     }
 
-                    void accept(DEBUG_TYPE type, Object pe) { typed.accept(printer, type, pe); }
+                    void accept(DEBUG_TYPE type, Object pe) { typed.accept(tag, printer, type, pe); }
 
                     @Override
                     public String toString() {
@@ -1105,9 +1204,11 @@ public class LambdaProfiler {
                                 '}';
                     }
                 }
-                void accept(Consumer<String>[] inks, DEBUG_TYPE type, Object pe);
-                TypedPrinter NO_PROCESS = (inks, type, pe) -> {};
-                TypedPrinter process = (inks, type1, pe) -> inks[type1.ordinal()].accept(type1.apply(pe));
+                void accept(String tag, Consumer<String>[] inks, DEBUG_TYPE type, Object pe);
+                TypedPrinter NO_PROCESS = (tag, inks, type, pe) -> {};
+                TypedPrinter process = (tag, inks, type1, pe) -> inks[type1.ordinal()].accept(
+                        tag.concat(type1.apply(pe).indent(6))
+                );
                 static TypedPrinter generate(Consumer<String>[] inks) { return inks == null || allEmpty(inks) ? NO_PROCESS : process; }
 
                 static boolean allEmpty(Consumer<String>[] cons) {
@@ -1130,7 +1231,16 @@ public class LambdaProfiler {
                 Params params
         ) {
             this(
-                    params.window, params.printer, params.params, params.timeout_nanos
+                    null, params
+            );
+        }
+
+        public Interpreter(
+                String tag,
+                Params params
+        ) {
+            this(
+                    tag, params.window, params.printer, params.params, params.timeout_nanos
             );
         }
 
@@ -1138,7 +1248,10 @@ public class LambdaProfiler {
             static final ThreadFactory ref = Executors.cleanFactory(Thread.NORM_PRIORITY);
         }
 
+        private final String tag;
+
         Interpreter(
+                String tag,
                 StackWindow window,
                 INKS printer,
                 Executors.FixedScheduler.ScheduleParams params,
@@ -1148,16 +1261,25 @@ public class LambdaProfiler {
                     window,
                     timeout_nanos
             );
-            this.mPrinter = new DEBUG_TYPE.TypedPrinter.PrinterContainer(printer.inks);
+            boolean nullTag;
+            this.mPrinter = new DEBUG_TYPE.TypedPrinter.PrinterContainer(
+                    !(nullTag = tag == null) ? tag : "Interpreter@".concat(Integer.toString(this.hash)), printer.inks);
             AtomicInteger scanNum = new AtomicInteger();
             activeScheduler = params != null
                     && printer.inks[DEBUG_TYPE.scheduled.ordinal()] != INKS.Builder.EMPTY;
             this.generator = activeScheduler ? Executors.FixedScheduler.generator(
                     ScheduleFactory.ref,
-                    () -> "[SCHEDULED]".concat(scanNum.incrementAndGet() + "/" +  params.repetitions() + scanFailures()),
-                    printer.inks[DEBUG_TYPE.scheduled.ordinal()],
-                    params
+                    params,
+                    () -> mPrinter.tag + "      [SCHEDULED]".concat(
+                            " " + scanNum.incrementAndGet() + "/" +  (params.repetitions() + 1) + "\n" + scanFailures().indent(7)
+                    ),
+                    printer.inks[DEBUG_TYPE.scheduled.ordinal()]
+//                    , params
             ) : Executors.Activator.default_activator;
+            this.tag = tag;
+            if (!nullTag) {
+                Base.put(tag, this);
+            }
         }
 
         @Override
@@ -1170,8 +1292,9 @@ public class LambdaProfiler {
                             if (exceptionMap.size() == 0) {
                                 if (activeScheduler) {
                                     mPrinter.printer[DEBUG_TYPE.scheduled.ordinal()].accept(
-                                            "[SCHEDULED ACTIVE]:\n Scheduled Scan...\n"
-                                                    + " params = \n" + ((Executors.FixedScheduler)generator).getParams()
+                                            mPrinter.tag
+                                                    + "      [SCHEDULED ACTIVE]: Scheduled Scan..."
+                                                    + "\n         params = \n" + ((Executors.FixedScheduler)generator).getParams().toString().indent(10)
                                     );
                                     generator.start();
                                 }
@@ -1218,13 +1341,20 @@ public class LambdaProfiler {
 
         @Override
         public String toString() {
-            return "Interpreter{" +
-                    "\n  >> successes=\n" + scanSuccesses() +
-                    "  >> failures=\n" + scanFailures() +
-                    "   >> profiler=" + super.toString().indent(3) +
-                    "   >> generator=" + generator.toString().indent(3) +
-                    "\n  >> printer=" + mPrinter.toString().indent(3) +
-                    '}';
+            String res = "Interpreter{" +
+                    "\n  >> tag = " + tag;
+            return res.concat(
+                    isShutDown ?
+                            "\n  >> [shutdown]\n}"
+                            :
+                            "\n  >> successes =\n" + scanSuccesses().indent(5) +
+                                    "  >> failures =\n" + scanFailures().indent(5) +
+                                    "  >> profiler =\n" + super.toString().indent(5) +
+                                    "  >> generator =\n" + generator.toString().indent(5) +
+                                    "  >> printer =\n" + mPrinter.toString().indent(5) +
+                                    '}'
+            );
+//            return res;
         }
     }
 

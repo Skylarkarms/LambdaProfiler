@@ -1,9 +1,8 @@
 # LambdaProfiler
-[latest version] = `1.0.0`
+[latest version] = `1.0.1`
 
 [dependencies]:
-- [`io.github.skylarkarms:lambdas:1.0.3`](https://github.com/Skylarkarms/Lambdas)
-- [`io.github.skylarkarms:concur:1.0.7`](https://github.com/Skylarkarms/Concur)
+- [`io.github.skylarkarms:concur:1.0.8`](https://github.com/Skylarkarms/Concur)
 - [`io.github.skylarkarms:numberutils:1.0.0`](https://github.com/Skylarkarms/NumberUtils)
 
 A utility library to assist in the debugging process of lambda instances.
