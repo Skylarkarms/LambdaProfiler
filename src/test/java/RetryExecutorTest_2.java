@@ -42,7 +42,6 @@ public class RetryExecutorTest_2 {
         System.setOut(new PrintStream(System.out, true));
 
         INTERPRETER = new LambdaProfiler.Interpreter(
-//                "INTERPRETER_A",
                 LambdaProfiler.Params.custom(builder ->
                         builder
                                 .setWindow(LambdaProfiler.StackWindow.all)
@@ -257,7 +256,6 @@ public class RetryExecutorTest_2 {
                             () -> {
                                 if (local == shared.getaDouble()) {
                                     done.accept(chrono.lapse());
-//                                    assert re.isIdle(): " local = " + local;
                                 }
                             }
                     );

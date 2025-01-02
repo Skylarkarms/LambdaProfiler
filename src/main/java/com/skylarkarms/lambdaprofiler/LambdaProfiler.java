@@ -2,7 +2,7 @@ package com.skylarkarms.lambdaprofiler;
 
 import com.skylarkarms.concur.Executors;
 import com.skylarkarms.concur.Locks;
-import com.skylarkarms.numberutils.MedianCalculator;
+import com.skylarkarms.numberutils.Statistics;
 
 import java.io.PrintStream;
 import java.lang.invoke.VarHandle;
@@ -606,37 +606,28 @@ public class LambdaProfiler {
 
         // Modified TimeOutStatistic to use RunningMedianStatistic
         static final class TimeOutStatistic {
-            private final MedianCalculator statistics;
-            private long[] lastSnapshot;
+            private final Statistics statistics;
 
             TimeOutStatistic() {
-                this.statistics = new MedianCalculator();
-                this.lastSnapshot = new long[]{0, 0, 0};
+                this.statistics = new Statistics();
             }
 
             public void addTime(long time) {
                 statistics.addValue(time);
-                // Update snapshot
-                lastSnapshot = statistics.getStatistics();
             }
-
-            public long[] getTime() { return lastSnapshot; }
-
-            public int getTimes() { return statistics.getCount(); }
 
             @Override
             public String toString() {
+                Statistics.Snapshot s = statistics.getSnapshot();
                 return "TimeOutStatistic{" +
-                        "\n >> stats =\n" + snap().indent(3) +
-                        " >> count = " + statistics.getCount() +
-                        "\n}";
-            }
-
-            String snap() {
-                return
-                        " - min = " + formatNanos(lastSnapshot[0])
-                                + "\n - median = " + formatNanos(lastSnapshot[1])
-                                + "\n - max = " + formatNanos(lastSnapshot[2]);
+                        "\n >> count = " + s.count() +
+                        "\n >> sum =\n" + formatNanos(s.sum()).indent(3) +
+                        " >> min =\n" + formatNanos(s.min()).indent(3) +
+                        " >> max =\n" + formatNanos(s.max()).indent(3) +
+                        " >> average =\n" + formatNanos((long) s.average()).indent(3) +
+                        " >> median =\n" + formatNanos((long) s.median()).indent(3) +
+                        " >> stats =\n" + statistics.getSnapshot().toString().indent(3) +
+                        "}";
             }
         }
 
@@ -664,7 +655,7 @@ public class LambdaProfiler {
         private final long timeout_nanos;
         private final StackWindow window;
 
-        /*private */final int hash = hashCode();
+        final int hash = hashCode();
 
         @Override
         public BooleanSupplier exceptional(BooleanSupplier core) { return exceptional(core, 3, window); }
@@ -838,11 +829,6 @@ public class LambdaProfiler {
                         interpreter
                 ) != null) throw new IllegalStateException("Tag [" + tag + "] already present.");
             }
-//            static Interpreter remove(String tag) {
-//                return ref.remove(
-//                        tag
-//                );
-//            }
         }
 
         public static Interpreter get(String tag) {
@@ -915,15 +901,10 @@ public class LambdaProfiler {
                         .append(exceptions.length);
                 for (TimeoutProcess pe:exceptions
                 ) {
-//                    boolean finished = pe.finished != 0;
-//                    long deadlock_t = finished ? pe.finished : (scan_time - pe.starting_time);
                     builder
                             .append("\n      >> exception = \n ")
                             .append(pe.toString().indent(8));
-//                            .append("      >> deadlock time = \n ")
-//                            .append(formatNanos(deadlock_t).concat(" (finished =" + finished + ")").indent(8));
                     if (pe.finished == 0) {
-//                    if (!finished) {
                         builder
                                 .append("      >> deadlock time = \n ")
                                 .append(formatNanos(scan_time - pe.starting_time).indent(8));
@@ -1274,7 +1255,6 @@ public class LambdaProfiler {
                             " " + scanNum.incrementAndGet() + "/" +  (params.repetitions() + 1) + "\n" + scanFailures().indent(7)
                     ),
                     printer.inks[DEBUG_TYPE.scheduled.ordinal()]
-//                    , params
             ) : Executors.Activator.default_activator;
             this.tag = tag;
             if (!nullTag) {
@@ -1354,7 +1334,6 @@ public class LambdaProfiler {
                                     "  >> printer =\n" + mPrinter.toString().indent(5) +
                                     '}'
             );
-//            return res;
         }
     }
 
