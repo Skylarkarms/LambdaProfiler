@@ -608,8 +608,8 @@ public class LambdaProfiler {
         static final class TimeOutStatistic {
             private final Statistics statistics;
 
-            TimeOutStatistic() {
-                this.statistics = new Statistics();
+            TimeOutStatistic(String tag) {
+                this.statistics = new Statistics(tag);
             }
 
             public void addTime(long time) {
@@ -877,7 +877,7 @@ public class LambdaProfiler {
             execsMap.compute(accessPoint
                     , (ap, timeoutEntry) -> { //using the Map's monitor to alter the queue.
                         if (timeoutEntry == null) {
-                            timeoutEntry = new TimeOutStatistic();
+                            timeoutEntry = new TimeOutStatistic(accessPoint.toString());
                         }
                         timeoutEntry.addTime(total);
                         return timeoutEntry;
@@ -925,6 +925,20 @@ public class LambdaProfiler {
                         .append(e.getValue().toString().indent(3));
             }
             return builder.append("\n}").toString();
+        }
+
+        /**
+         * Returns a table with all precomputed results at the moment of inspection.
+         * @return {@link String[][]} the table with tagged rows belonging to the StackTrace of initial execution.
+         * @see Statistics.Snapshot#tableOf(Statistics.Snapshot...)
+         *
+         * */
+        public String[][] successes() {
+            Collection<TimeOutStatistic> vals = execsMap.values();
+            Statistics.Snapshot[] res = new Statistics.Snapshot[vals.size()];
+            int i = 0;
+            for (TimeOutStatistic s:vals) res[i++] = s.statistics.getSnapshot();
+            return Statistics.Snapshot.tableOf(res);
         }
 
         @Override
