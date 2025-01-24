@@ -97,16 +97,24 @@ public class RetryExecutorTest_2 {
         System.err.println("<<<<<<<<||||||>>>>>>>");
         Locks.robustPark(Duration.ofSeconds(5).toNanos());
 
-        LazyHolder.debug = true;
-        LazyHolder.setGlobalConfig(LazyHolder.SpinnerConfig.custom(
-                params -> {
-                    params.amplify(1.5);
-                }
-        ));
+        LazyHolder.setDebug(true);
+//        LazyHolder.debug = true;
+        LazyHolder.setHolderConfig(
+                Locks.ExceptionConfig.runtime(
+                        builder -> builder.setDurationUnit(1500, TimeUnit.MILLISECONDS)
+                )
+//                LazyHolder.SpinnerConfig.custom(
+////        LazyHolder.setGlobalConfig(LazyHolder.SpinnerConfig.custom(
+//                params -> {
+//                    params.amplify(1.5);
+//                }
+//                )
+        );
 
         record TAG(double i, String name, String tag){}
         LazyHolder.Supplier<TAG> integerSupplier = new LazyHolder.Supplier<>(
-                params -> params.amplify(3),
+                params -> params.setTotalDuration(2000),
+//                params -> params.amplify(3),
                 INTERPRETER.exceptional(() -> new TAG(Math.pow(5, 6), "Juan", "LOL"))
         );
 
