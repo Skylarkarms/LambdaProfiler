@@ -101,7 +101,7 @@ public class RetryExecutorTest_2 {
 //        LazyHolder.debug = true;
         LazyHolder.setHolderConfig(
                 Locks.ExceptionConfig.runtime(
-                        builder -> builder.setDurationUnit(1500, TimeUnit.MILLISECONDS)
+                        builder -> builder.setTotal(1500, TimeUnit.MILLISECONDS)
                 )
 //                LazyHolder.SpinnerConfig.custom(
 ////        LazyHolder.setGlobalConfig(LazyHolder.SpinnerConfig.custom(
@@ -113,7 +113,7 @@ public class RetryExecutorTest_2 {
 
         record TAG(double i, String name, String tag){}
         LazyHolder.Supplier<TAG> integerSupplier = new LazyHolder.Supplier<>(
-                params -> params.setTotalDuration(2000),
+                params -> params.setTotalMillis(2000),
 //                params -> params.amplify(3),
                 INTERPRETER.exceptional(() -> new TAG(Math.pow(5, 6), "Juan", "LOL"))
         );
