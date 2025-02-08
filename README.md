@@ -2,7 +2,7 @@
 [latest version] = `1.0.8`
 
 [dependencies]:
-   - [`io.github.skylarkarms:concur:1.1.2`](https://github.com/Skylarkarms/Concur)
+   - [`io.github.skylarkarms:concur:1.1.3`](https://github.com/Skylarkarms/Concur)
    - [`io.github.skylarkarms:numberutils:1.0.2`](https://github.com/Skylarkarms/NumberUtils)
 
 [found in]:
