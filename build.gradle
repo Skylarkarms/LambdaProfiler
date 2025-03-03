@@ -52,5 +52,5 @@ repositories {
 
 dependencies {
     implementation('io.github.skylarkarms:numberutils:1.0.2')
-    implementation('io.github.skylarkarms:concur:1.1.4')
+    implementation('io.github.skylarkarms:concur:1.1.5')
 }
