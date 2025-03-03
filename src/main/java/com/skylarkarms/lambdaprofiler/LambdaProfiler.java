@@ -521,9 +521,9 @@ public class LambdaProfiler {
      * Will define the {@link StackDatum#trace} field.
      * */
     public record StackWindow(int start, int rest){
-        public static StackWindow first = new StackWindow(0, 1);
-        public static StackWindow all = new StackWindow(0, -1);
-        public static StackWindow last = new StackWindow(-2, -1);
+        public static final StackWindow first = new StackWindow(0, 1);
+        public static final StackWindow all = new StackWindow(0, -1);
+        public static final StackWindow last = new StackWindow(-2, -1);
         public static StackWindow truncate(int end) {
             if (end == 0) throw new IllegalStateException("value cannot be 0");
             return new StackWindow(0, end);
@@ -1162,7 +1162,7 @@ public class LambdaProfiler {
             }
 
             record DEFAULT_CACHE() {
-                static Consumer<String>[] ref = getDefaultInks();
+                static final Consumer<String>[] ref = getDefaultInks();
             }
 
             @SuppressWarnings("unchecked")
